@@ -514,6 +514,8 @@ function renderBlock(node, ctx) {
       q.appendChild(renderBlocks(node.children, ctx));
       return q;
     }
+    case 'container':
+      return renderContainer(node, ctx);
     case 'list':
       return renderList(node, ctx);
     case 'table':
@@ -529,6 +531,25 @@ function renderBlock(node, ctx) {
   }
 }
 
+/* 提示区块 ::: tip / info / warning / danger / details；没写标题时用类型名当标题（就是 VuePress 的样子） */
+const CONTAINER_TITLES = { tip: '提示', info: '说明', warning: '警告', danger: '危险', details: '详情' };
+
+function renderContainer(node, ctx) {
+  if (node.kind === 'details') {                 // 折叠块：直接用原生 <details>
+    const box = el('details', 'custom-details');
+    box.appendChild(el('summary', null, plainText(node.title) || CONTAINER_TITLES.details));
+    box.appendChild(renderBlocks(node.children, ctx));
+    return box;
+  }
+  const box = el('div', 'custom-block custom-block-' + node.kind);
+  const title = el('p', 'custom-block-title');
+  if (node.title && node.title.length) appendInline(title, node.title, ctx);
+  else title.textContent = CONTAINER_TITLES[node.kind] || node.label;
+  box.appendChild(title);
+  box.appendChild(renderBlocks(node.children, ctx));
+  return box;
+}
+
 function renderCode(node) {
   const wrap = el('div', 'code-block');
   const head = el('div', 'code-head');
@@ -540,7 +561,8 @@ function renderCode(node) {
   const pre = el('pre');
   const code = el('code');
   if (node.lang) code.className = 'language-' + node.lang;
-  code.appendChild(highlight(node.code, node.lang));
+  const body = highlight(node.code, node.lang);
+  code.appendChild(node.hl && node.hl.length ? wrapCodeLines(body, node.hl) : body);
   pre.appendChild(code);
 
   wrap.appendChild(head);
@@ -552,6 +574,39 @@ function renderCode(node) {
     setTimeout(() => { btn.textContent = '复制'; }, 1200);
   });
   return wrap;
+}
+
+/* 行高亮：highlight() 只往文本里插 <span>、逐字保留原文，所以按换行切成行再逐行套 span 是安全的 */
+function wrapCodeLines(frag, marks) {
+  const set = new Set(marks);
+  const lines = [[]];
+  const cur = () => lines[lines.length - 1];
+  const add = (parts, make) => {                 // 已按 \n 切开：除第一段外都另起一行
+    parts.forEach((part, k) => {
+      if (k) lines.push([]);
+      if (part) cur().push(make(part));
+    });
+  };
+  (function walk(parent) {
+    for (const child of Array.from(parent.childNodes)) {
+      if (child.nodeType !== Node.ELEMENT_NODE) {
+        add(String(child.nodeValue).split('\n'), (text) => document.createTextNode(text));
+      } else if (child.textContent.indexOf('\n') < 0) {
+        cur().push(child.cloneNode(true));
+      } else {
+        add(child.textContent.split('\n'), (text) => el('span', child.className, text));   // 跨行 token（多行注释等）
+      }
+    }
+  })(frag);
+
+  const out = document.createDocumentFragment();
+  lines.forEach((nodes, idx) => {
+    if (idx) out.appendChild(document.createTextNode('\n'));
+    const box = el('span', set.has(idx + 1) ? 'code-line hl' : 'code-line');
+    for (const n of nodes) box.appendChild(n);
+    out.appendChild(box);
+  });
+  return out;
 }
 
 function renderList(node, ctx) {
@@ -744,6 +799,7 @@ function showLoading() {
 
 function renderDoc(text, anchor) {
   const ast = parse(text);
+  for (const w of ast.warnings || []) console.warn('[md-site] ' + w);
   const article = $('#content');
   const ctx = { docDir: dirname(state.docPath), hrefBase: '#/' + state.route };
   article.replaceChildren(renderDocument(ast, ctx));

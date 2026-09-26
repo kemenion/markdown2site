@@ -34,6 +34,13 @@
   --tok-number: #a5673f;
   --tok-keyword: #c0392b;
   --tok-literal: #2c82c9;
+  /* 提示区块 ::: tip 等：--cb-line 是左边条与标题色，--cb-bg 是底色 */
+  --cb-tip-line: #42b983;  --cb-tip-bg: #f0faf5;
+  --cb-info-line: #2c82c9;  --cb-info-bg: #f0f6fc;
+  --cb-warning-line: #c76b29;  --cb-warning-bg: #fdf5ee;
+  --cb-danger-line: #c0392b;  --cb-danger-bg: #fdf1f0;
+  --cb-plain-line: #dfe4e8;  --cb-plain-bg: #f8f9fa;
+  --hl-bg: rgba(66, 185, 131, .18);
   --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans CJK SC",
     "Source Han Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -62,6 +69,13 @@ html[data-theme="dark"] {
   --tok-number: #d9a276;
   --tok-keyword: #f27983;
   --tok-literal: #7ab8f5;
+  /* 提示区块：底色改成低透明度，深底上才不刺眼（左边条用亮一点的主色） */
+  --cb-tip-line: #4ecf95;  --cb-tip-bg: rgba(78, 207, 149, .12);
+  --cb-info-line: #7ab8f5;  --cb-info-bg: rgba(122, 184, 245, .12);
+  --cb-warning-line: #e6a15c;  --cb-warning-bg: rgba(230, 161, 92, .12);
+  --cb-danger-line: #f27983;  --cb-danger-bg: rgba(242, 121, 131, .12);
+  --cb-plain-line: #3a4148;  --cb-plain-bg: rgba(127, 140, 141, .12);
+  --hl-bg: rgba(78, 207, 149, .18);
 }
 
 * { box-sizing: border-box; }
@@ -233,6 +247,33 @@ html[data-theme="dark"] .code-block pre code { color: #c8d2dc; }
 .markdown-section blockquote > :first-child { margin-top: 0; }
 .markdown-section blockquote > :last-child { margin-bottom: 0; }
 .markdown-section hr { border: 0; border-bottom: 1px solid var(--border); margin: 2em 0; }
+
+/* 提示区块：::: tip / ::: warning 自定义标题 …（写法见 docs/指南/写内容/支持的语法.md） */
+.markdown-section .custom-block {
+  margin: 1.2em 0; padding: 1px 1em;
+  border-left: 4px solid var(--cb-line); border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--cb-bg);
+}
+.markdown-section .custom-block > :first-child { margin-top: .9em; }
+.markdown-section .custom-block > :last-child { margin-bottom: .9em; }
+.markdown-section .custom-block-title { font-weight: 600; color: var(--cb-line); }
+.markdown-section .custom-block-title + * { margin-top: .3em; }
+.markdown-section .custom-block-tip { --cb-line: var(--cb-tip-line); --cb-bg: var(--cb-tip-bg); }
+.markdown-section .custom-block-info { --cb-line: var(--cb-info-line); --cb-bg: var(--cb-info-bg); }
+.markdown-section .custom-block-warning { --cb-line: var(--cb-warning-line); --cb-bg: var(--cb-warning-bg); }
+.markdown-section .custom-block-danger { --cb-line: var(--cb-danger-line); --cb-bg: var(--cb-danger-bg); }
+.markdown-section .custom-block-plain { --cb-line: var(--cb-plain-line); --cb-bg: var(--cb-plain-bg); }
+/* ::: details 折叠块，用原生 <details> */
+.markdown-section details.custom-details {
+  margin: 1.2em 0; padding: 1px 1em;
+  border-left: 4px solid var(--cb-plain-line); border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--cb-plain-bg);
+}
+.markdown-section details.custom-details > summary { margin: .9em 0; font-weight: 600; color: var(--text-strong); cursor: pointer; }
+.markdown-section details.custom-details > *:last-child { margin-bottom: .9em; }
+
+/* 代码块行高亮 ```js{1,4-6}：行是 inline span，底色横向铺满、不打断 pre 的排版 */
+.code-block code .code-line.hl { background: var(--hl-bg); box-shadow: 0 0 0 3px var(--hl-bg); }
 .markdown-section img { max-width: 100%; height: auto; border-radius: var(--radius); cursor: zoom-in; }
 
 .table-wrap { overflow-x: auto; margin: 1.2em 0; }

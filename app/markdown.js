@@ -5,16 +5,25 @@
    渲染在 app/main.js 完成（createElement + textContent，不做 innerHTML 拼串）
 
    AST 节点契约
-     块级: root{children}
-           heading{level,id,inline}         paragraph{inline}
-           code{lang,code}                  blockquote{children}
+     块级: root{children}                        root.warnings[] 可选（渲染前报一次）
+           heading{level,id,inline}            paragraph{inline}
+           code{lang,hl,code}                  blockquote{children}
+           container{kind,label,title,children}  提示区块，见下
            list{ordered,start,tight,items:[{children,task}]}
            table{ align, head:[{inline}], rows:[[{inline}]] }
-           hr                               html{html}
+           hr                                  html{html}
            footnotes{items:[{id,index,children}]}
      行内: text{value}  code{value}  strong{children}  em{children}  del{children}
            link{href,title,children}  image{src,alt,title}  hardbreak
            html{html}  footnoteRef{id}
+
+   提示区块（container）：
+     开行 ::: tip|info|warning|danger|details [自定义标题]，收尾 :::；
+     嵌套时内层冒号数别超过外层（同数也可以）；内容照常解析 Markdown。
+     kind 为上面五种之一，认不出的名字归为 kind:'plain'（中性样式 + 一条 warn）。
+
+   其它少量拓展（都不是标准 Markdown，写法见 docs/指南/写内容/支持的语法.md）：
+     代码块行高亮 ```js{1,4-6}、标题自定义锚点 ## 标题 {#id}、文件开头的 YAML front matter（整块忽略）
 
    有意不支持（KISS，见 README「已知限制」）：
      setext 标题、引用式链接 [a][b]、Obsidian 双链 [[a]]、HTML 块内部的 Markdown
@@ -38,19 +47,44 @@ const RE_TASK = /^\[([ xX])\][ \t]+/;
 const RE_HTML_COMMENT = /^ {0,3}<!--/;
 const RE_HTML_OPEN = /^ {0,3}<([a-zA-Z][a-zA-Z0-9-]*)([ \t/>]|$)/;
 const RE_CJK = /[\u1100-\u11ff\u2e80-\u303f\u3040-\u30ff\u3130-\u318f\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7ff\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60]/;
+/* 提示区块 ::: tip 自定义标题 / ::: ；代码块行高亮 ```js{1,4-6} ；标题自定义锚点 {#id} */
+const RE_CONTAINER_OPEN = /^ {0,3}(:{3,})[ \t]*([^\s:]+)?[ \t]*(.*)$/;
+const RE_CONTAINER_CLOSE = /^ {0,3}(:{3,})[ \t]*$/;
+const RE_LINE_MARKS = /\{([\d,\s-]*)\}[ \t]*$/;
+const RE_ANCHOR = /^(.*?)[ \t]*\{#([^}\s]+)\}[ \t]*$/;
+const CONTAINER_KINDS = new Set(['tip', 'info', 'warning', 'danger', 'details']);
+const CONTAINER_ALIASES = { note: 'info', important: 'info', caution: 'danger', error: 'danger' };
 
 /* ---------------- 入口 ---------------- */
 
 export function parse(src, options = {}) {
   const opts = Object.assign({ footnotes: true }, options);
   const text = String(src == null ? '' : src).replace(/\r\n?/g, '\n').replace(/\t/g, '    ');
-  const state = { defs: new Map(), refOrder: [], usedIds: new Map() };
-  const children = parseBlocks(text.split('\n'), state, opts);
+  const state = { defs: new Map(), refOrder: [], usedIds: new Map(), warnings: [] };
+  const children = parseBlocks(stripFrontMatter(text.split('\n')), state, opts);
   if (state.refOrder.length) {
     const node = makeFootnotes(state);
     if (node.items.length) children.push(node);
   }
-  return { type: 'root', children };
+  const root = { type: 'root', children };
+  if (state.warnings.length) root.warnings = state.warnings;
+  return root;
+}
+
+/* 文件开头的 YAML front matter（--- 开头、下一行 --- 收尾）整块忽略：
+   本站的站点配置在 _config.json 里，正文不需要 front matter，写了也不该渲染出来。
+   只在「中间每行都长得像 key: value」时才当 front matter，避免把正文开头的分割线 + 内容整块吃掉。 */
+function stripFrontMatter(lines) {
+  if (!lines.length || lines[0].trim() !== '---') return lines;
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line !== '---') {
+      if (line && !/^[A-Za-z_][\w.-]*[ \t]*:/.test(line)) return lines;
+      continue;
+    }
+    return lines.slice(i + 1);
+  }
+  return lines;                          // 没找到收尾行：不是 front matter，原样交给解析
 }
 
 /* ---------------- 块级解析 ---------------- */
@@ -76,6 +110,9 @@ function parseBlocks(lines, state, opts) {
     if (RE_HR.test(line)) { out.push({ type: 'hr' }); i++; continue; }
 
     if (isTableStart(lines, i)) { const r = readTable(lines, i, state); out.push(r.node); i = r.next; continue; }
+
+    const open = containerOpen(line);
+    if (open) { const r = readContainer(lines, i, open, state, opts); out.push(r.node); i = r.next; continue; }
 
     if (RE_QUOTE.test(line)) { const r = readQuote(lines, i, state, opts); out.push(r.node); i = r.next; continue; }
 
@@ -105,23 +142,105 @@ function readParagraph(lines, i, state) {
 }
 
 function makeHeading(raw, level, state) {
-  const cleaned = raw.replace(/[ \t]+#+[ \t]*$/, '').trim();
+  let cleaned = raw.replace(/[ \t]+#+[ \t]*$/, '').trim();
+  let custom = '';
+  const anchor = RE_ANCHOR.exec(cleaned);        // ## 标题 {#自定义锚点}
+  if (anchor) { cleaned = anchor[1].trim(); custom = anchor[2]; }
   const inline = parseInline(cleaned, state);
-  const id = slugify(plainText(inline), state.usedIds);
+  const id = custom ? unique(custom, state.usedIds) : slugify(plainText(inline), state.usedIds);
   return { type: 'heading', level, id, inline };
+}
+
+/* 自定义锚点也走 usedIds，保证后面的同名锚点不会撞车 */
+function unique(id, usedIds) {
+  if (!usedIds) return id;
+  const n = usedIds.get(id) || 0;
+  usedIds.set(id, n + 1);
+  return n ? id + '-' + n : id;
 }
 
 function readFence(lines, i, m) {
   const marker = m[1][0];
   const len = m[1].length;
-  const info = (m[2] || '').trim();
+  let info = (m[2] || '').trim();
   const closeRe = new RegExp('^ {0,3}' + (marker === '`' ? '`' : '~') + '{' + len + ',}[ \\t]*$');
   const buf = [];
   let j = i + 1;
   while (j < lines.length && !closeRe.test(lines[j])) { buf.push(lines[j]); j++; }
   if (j < lines.length) j++;
+  let hl = [];
+  const marks = RE_LINE_MARKS.exec(info);          // ```js{1,4-6}：行高亮，别混进语言名
+  if (marks) {
+    hl = parseLineMarks(marks[1]).filter((n) => n >= 1 && n <= buf.length);
+    info = info.slice(0, marks.index).trim();
+  }
   const lang = info.replace(/^\{\.?/, '').replace(/\}$/, '').split(/[\s,]+/)[0] || '';
-  return { node: { type: 'code', lang, code: buf.join('\n') }, next: j };
+  const node = { type: 'code', lang, code: buf.join('\n') };
+  if (hl.length) node.hl = hl;
+  return { node, next: j };
+}
+
+/* '1,4,6-7' -> [1,4,6,7]；上限兜底，免得 {1-999999} 把内存吃光 */
+function parseLineMarks(spec) {
+  const out = [];
+  for (const part of String(spec).split(',')) {
+    const t = part.trim();
+    if (!t) continue;
+    const range = /^(\d+)[ \t]*-[ \t]*(\d+)$/.exec(t);
+    if (range) {
+      const a = parseInt(range[1], 10);
+      const b = parseInt(range[2], 10);
+      for (let n = Math.min(a, b); n <= Math.max(a, b) && out.length < 1000; n++) out.push(n);
+    } else if (/^\d+$/.test(t)) out.push(parseInt(t, 10));
+  }
+  return out;
+}
+
+/* ---------------- 提示区块 ::: tip ---------------- */
+
+function containerOpen(line) {
+  const m = RE_CONTAINER_OPEN.exec(line);
+  if (!m || !m[2]) return null;                  // 光秃秃的 ::: 是收尾，不是开行
+  const label = m[2].toLowerCase();
+  const kind = CONTAINER_KINDS.has(label) ? label : (CONTAINER_ALIASES[label] || 'plain');
+  return { colons: m[1].length, kind, label, title: (m[3] || '').trim() };
+}
+
+function containerClose(line) {
+  const m = RE_CONTAINER_CLOSE.exec(line);
+  return m ? m[1].length : 0;
+}
+
+function readContainer(lines, i, open, state, opts) {
+  const buf = [];
+  const stack = [];                              // 内层容器的冒号数：内层自己收自己
+  let closed = false;
+  let j = i + 1;
+  while (j < lines.length) {
+    const line = lines[j];
+    const fence = RE_FENCE.exec(line);
+    if (fence) {                                 // 代码块整块抄进来：里面的 ::: 不算容器边界
+      const r = readFence(lines, j, fence);
+      for (let k = j; k < r.next; k++) buf.push(lines[k]);
+      j = r.next;
+      continue;
+    }
+    const nested = containerOpen(line);
+    const close = nested ? 0 : containerClose(line);
+    if (nested) stack.push(nested.colons);
+    else if (close) {
+      if (stack.length) {
+        if (close >= stack[stack.length - 1]) stack.pop();
+      } else if (close >= open.colons) { closed = true; j++; break; }
+    }
+    buf.push(line);
+    j++;
+  }
+  if (!closed) state.warnings.push('::: ' + open.label + ' 没有找到收尾的 :::，已按到文末处理');
+  else if (open.kind === 'plain') state.warnings.push('不认识的提示区块类型「' + open.label + '」，已按中性样式渲染（可用类型见 docs/指南/写内容/支持的语法.md）');
+  const node = { type: 'container', kind: open.kind, label: open.label, children: parseBlocks(buf, state, opts) };
+  if (open.title) node.title = parseInline(open.title, state);
+  return { node, next: j };
 }
 
 function readIndentedCode(lines, i) {
@@ -336,6 +455,7 @@ function startsNewBlock(lines, i) {
   if (!line.trim()) return true;
   if (RE_HEADING.test(line) || RE_FENCE.test(line) || RE_HR.test(line)) return true;
   if (RE_QUOTE.test(line) || RE_LIST.test(line) || isHtmlBlockStart(line)) return true;
+  if (containerOpen(line)) return true;
   return isTableStart(lines, i);
 }
 
