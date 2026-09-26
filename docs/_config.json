@@ -1,0 +1,9 @@
+{
+  "name": "阅读收集",
+  "home": "README.md",
+  "nav": "_sidebar.md",
+  "toc": [2, 3],
+  "sidebarExpanded": "all",
+  "cacheVersion": "v1",
+  "theme": "auto"
+}

@@ -30,21 +30,9 @@
   <button type="button" class="lightbox-close" aria-label="关闭">×</button>
 </div>
 
-<script>
-/* ============================================================
-   站点配置：改这里就够了（说明见 README.md）
-   ============================================================ */
-window.MD_SITE = {
-  name: '阅读收集',        // 顶栏标题；留空则取 _sidebar.md 中第一个文档的标题
-  home: 'README.md',       // 首页文件（#/ 路由指向它）
-  root: 'docs',            // 内容根目录：正文/图片/_sidebar.md 都在它下面；'' = 与 index.html 同级
-  sidebar: '_sidebar.md',  // 目录清单文件（docsify 语法，可直接复用）
-  toc: [2, 3],             // 右栏大纲包含的标题级别，[2, 3] = h2 + h3；左栏只列文件，不挂大纲
-  sidebarExpanded: 'all',  // 左栏分类初始展开：'all' 全展开 | 'none' 全收起 | ['指南', '指南/写内容'] 只展开点名的
-  cacheVersion: 'v1',      // 破缓存版本号，内容更新后改一下即可（自动拼接，无需手改 HTML）
-  theme: 'auto'            // auto | light | dark
-};
-</script>
+<!-- 外壳零配置：内容根默认 docs/，项目自己的配置都在 docs/_config.json 里（说明见 docs/指南/站点配置.md）。
+     只有换内容根时才需要解开下面这行——测试夹具就是靠它把 root 指到别处：
+     <script>window.MD_SITE = { root: 'fixtures' };</script> -->
 <script type="module" src="app/main.js"></script>
 </body>
 </html>

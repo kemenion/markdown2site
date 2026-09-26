@@ -1,20 +1,61 @@
 /* ============================================================
    app/main.js —— 路由 / 侧栏 / 大纲 / 主题 / 渲染 / 交互
    依赖：app/markdown.js（解析器）、app/style.css
-   配置来自 index.html 里的 window.MD_SITE
+   配置来源（后者覆盖前者）：
+     内置默认值 ← 内容根/_config.json ← index.html 里的 window.MD_SITE（可选，换内容根用）
+   本文件与 index.html 都不含任何具体项目的信息：换项目 = 换内容根那个目录。
    ============================================================ */
 import { parse, plainText } from './markdown.js';
 
-const CFG = Object.assign({
-  name: '',
-  home: 'README.md',
-  root: '',
-  sidebar: '_sidebar.md',
-  toc: [2, 3],
-  sidebarExpanded: 'all',
-  cacheVersion: '',
-  theme: 'auto'
-}, window.MD_SITE || {});
+/* 内容根默认 docs/；root 必须在读 _config.json 之前定下来，所以它只能来自这里或外壳 */
+const DEFAULTS = {
+  name: '',                // 顶栏标题；留空则取清单里第一个文档的标题
+  home: 'README.md',       // 首页文件（#/ 路由指向它）
+  root: 'docs',            // 内容根：正文 / 图片 / 配置文件 / 清单都在它下面；'' = 与入口同级
+  nav: '_sidebar.md',      // 左栏清单文件（相对内容根）；旧名 sidebar 仍然接受
+  toc: [2, 3],             // 右栏大纲收录的标题级别；[] = 关闭
+  sidebarExpanded: 'all',  // 左栏分类初始展开：'all' / 'none' / ['指南', '指南/写内容']
+  cacheVersion: '',        // 破缓存版本号，会拼到所有内容请求上（配置文件自己不带）
+  theme: 'auto'            // auto | light | dark
+};
+const OVERRIDE = window.MD_SITE || {};      // 外壳级覆盖：换内容根、测试夹具都靠它
+const CFG = Object.assign({}, DEFAULTS, OVERRIDE);
+const ALIAS = { sidebar: 'nav' };           // 旧名，别让老写法失效
+
+/* 逐键并入配置：只认已知键（拼错的键要吭声），'_' 前缀的键当注释静默跳过，
+   '' 也照收——显式清空是有意义的。fromFile 时 root 太晚了，只能忽略。 */
+function applyKeys(src, fromFile) {
+  for (const key of Object.keys(src || {})) {
+    const v = src[key];
+    if (key.startsWith('_') || v === undefined) continue;
+    if (fromFile && key === 'root') {
+      console.warn('[md-site] root 只能写在 index.html 的 window.MD_SITE 里，_config.json 里的已忽略');
+      continue;
+    }
+    const name = ALIAS[key] || key;
+    if (!(name in DEFAULTS)) {
+      console.warn('[md-site] 不认识的配置键：' + key + '（可用键见 docs/指南/站点配置.md）');
+      continue;
+    }
+    CFG[name] = v;
+  }
+}
+
+/* 项目配置住在内容根里（默认 docs/_config.json），外壳与 app/ 对具体项目一无所知。
+   读不到 / 不是合法 JSON → 退回默认值，站点照常跑，只在控制台留一条 warn。 */
+async function loadConfig() {
+  if (!CFG.root) return;                    // root: '' → 内容就在入口旁边，没有独立内容根
+  const url = contentBase() + '_config.json';
+  let file = null;
+  try {
+    const res = await fetch(url, { cache: 'no-store' });   // 版本号自己也在里面，不能拼 v=
+    if (res.ok) file = JSON.parse(await res.text());       // 404 = 没这个文件，静默用默认值
+  } catch (e) {
+    console.warn('[md-site] ' + url + ' 读不了或不是合法 JSON，改用默认配置：', e.message);
+  }
+  if (file && typeof file === 'object') applyKeys(file, true);
+  applyKeys(OVERRIDE, false);               // 外壳覆盖优先级最高
+}
 
 const THEME_KEY = 'md-site-theme';
 const GROUP_KEY = 'md-site-group-state';
@@ -760,7 +801,7 @@ function renderError(err) {
   box.appendChild(el('p', 'state-kv', docUrl(state.docPath)));
 
   const p = el('p');
-  if (notFound) p.appendChild(document.createTextNode('请检查文件名，或 _sidebar.md 里的路径是否正确。'));
+  if (notFound) p.appendChild(document.createTextNode('请检查文件名，或 ' + CFG.nav + ' 里的路径是否正确。'));
   else p.appendChild(document.createTextNode('错误信息：' + ((err && err.message) || err) + '（若双击打开，请改用 HTTP 静态服务）'));
   p.appendChild(document.createTextNode(' '));
   p.appendChild(linkTo('#/', '回到首页'));
@@ -1072,13 +1113,13 @@ function firstDocLabel(items) {
 async function loadSidebar() {
   const nav = document.querySelector('.sidebar-nav');
   let text = '';
-  try { text = await fetchText(CFG.sidebar); } catch (e) { text = ''; }
+  try { text = await fetchText(CFG.nav); } catch (e) { text = ''; }
   state.sidebarItems = text.trim() ? collectSidebar(parse(text).children) : [];
 
   $('#site-name').textContent = CFG.name || firstDocLabel(state.sidebarItems) || '文档';
 
   nav.replaceChildren();
-  if (!state.sidebarItems.length) nav.appendChild(el('div', 'sidebar-empty', '未能加载 ' + CFG.sidebar));
+  if (!state.sidebarItems.length) nav.appendChild(el('div', 'sidebar-empty', '未能加载 ' + CFG.nav));
   else nav.appendChild(buildSidebarTree(state.sidebarItems));
   applyGroupStates();
 }
@@ -1210,8 +1251,11 @@ function bindEvents() {
 }
 
 async function init() {
-  applyTheme(themeMode(), false);
+  applyTheme(themeMode(), false);       // 先按 localStorage / 默认上色，避免主题白闪
+  await loadConfig();                   // 项目配置住在内容根里（多一次小请求，no-store）
+  applyTheme(themeMode(), false);       // 配置里指定了 theme 且 localStorage 为空时补一次
   $('#site-name').textContent = CFG.name || '文档';
+  if (CFG.name) document.title = CFG.name;   // 正文渲染前标签页先显示站点名
   bindEvents();
   await loadSidebar();
   await route();
