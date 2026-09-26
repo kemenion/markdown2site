@@ -155,6 +155,15 @@ kbd {
 .sidebar-nav .doc > a::before { content: "📄"; margin-right: 6px; font-size: 12px; opacity: .75; }
 .sidebar-nav .ext > a::after { content: " ↗"; color: var(--text-muted); font-size: 12px; }
 .sidebar-empty { color: var(--text-muted); font-size: 13px; padding: 8px 0; }
+/* 长标题提示：fixed 挂 body（#sidebar 的 overflow 会裁掉内嵌气泡），配色跟主题反转 */
+#sidebar-tip {
+  position: fixed; z-index: 35;                 /* 顶栏 30 之上、遮罩 40 之下 */
+  max-width: min(420px, 90vw);
+  padding: 6px 10px; border-radius: var(--radius);
+  background: var(--text-strong); color: var(--bg);
+  font-size: 13px; line-height: 1.5; word-break: break-word; white-space: normal;
+  box-shadow: var(--shadow); pointer-events: none;   /* 气泡别抢鼠标 */
+}
 
 /* ---------------- Markdown 正文（数值对齐 vue 主题） ---------------- */
 .markdown-section > *:first-child { margin-top: 0; }

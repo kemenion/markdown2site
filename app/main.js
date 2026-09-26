@@ -1092,6 +1092,83 @@ function updateSidebarActive() {
   applyGroupStates();
 }
 
+/* ---------------- 侧栏长标题提示 ----------------
+   左栏宽度固定（320px），长标题会被省略号截断。气泡挂在 body 上并 fixed 定位：
+   #sidebar 有 overflow-y:auto（横向会跟着裁），气泡塞在条目里会被裁掉、还会被
+   手机端抽屉的 transform 破坏定位。只有真的被截断时才弹（短标题不打扰），
+   触屏没有悬停，直接不介入。 */
+
+let tipNode = null;
+let tipAnchor = null;
+
+function tipElement() {
+  if (!tipNode) {
+    tipNode = el('div', 'sidebar-tip', '');
+    tipNode.id = 'sidebar-tip';
+    tipNode.hidden = true;
+    document.body.appendChild(tipNode);
+  }
+  return tipNode;
+}
+
+/* 省略号是否真的吃掉了文字：block + nowrap + overflow:hidden 下比 scroll/client 即可 */
+function isClipped(node) {
+  return node.scrollWidth - node.clientWidth > 1;
+}
+
+function showTip(anchor) {
+  const tip = tipElement();
+  tip.textContent = (anchor.textContent || '').trim();
+  if (!tip.textContent) { hideTip(); return; }
+  tip.hidden = false;                       // 先可见才能量到宽高
+  const r = anchor.getBoundingClientRect();
+  const t = tip.getBoundingClientRect();
+  const gap = 6;
+  let top = r.bottom + gap;                 // 默认贴在条目下方
+  if (top + t.height > window.innerHeight - 8) {
+    top = Math.max(8, r.top - gap - t.height);   // 下方放不下就翻到上方
+  }
+  const left = Math.max(8, Math.min(r.left, window.innerWidth - t.width - 8));
+  tip.style.top = top + 'px';
+  tip.style.left = left + 'px';
+  tipAnchor = anchor;
+}
+
+function hideTip() {
+  tipAnchor = null;
+  if (tipNode) tipNode.hidden = true;
+}
+
+/* 只在条目上弹（分类标题自己会换行，不会截断，无需提示） */
+function tipTargetOf(event) {
+  const node = event.target;
+  const a = node && node.closest ? node.closest('.sidebar-nav a[data-path]') : null;
+  return a;
+}
+
+function bindSidebarTips() {
+  if (!window.matchMedia || !window.matchMedia('(hover: hover)').matches) return;
+  const nav = document.querySelector('.sidebar-nav');
+  nav.addEventListener('mouseover', (e) => {
+    const a = tipTargetOf(e);
+    if (!a) { hideTip(); return; }          // 移到空白处 / 分类标题上
+    if (a === tipAnchor) return;            // 同一个条目，不必重算
+    if (!isClipped(a)) { hideTip(); return; }   // 没被截断就不打扰
+    showTip(a);
+  });
+  nav.addEventListener('mouseleave', hideTip);
+  nav.addEventListener('click', hideTip);                 // 选中文档后立刻收起
+  nav.addEventListener('focusin', (e) => {                // Tab 聚焦同样看得到全名
+    const a = tipTargetOf(e);
+    if (a && isClipped(a)) showTip(a);
+  });
+  nav.addEventListener('focusout', hideTip);
+  const box = $('#sidebar');
+  if (box) box.addEventListener('scroll', hideTip, { passive: true });   // 滚动后位置失效
+  window.addEventListener('resize', hideTip);
+  window.addEventListener('scroll', hideTip, { passive: true });
+}
+
 /* ---------------- 事件绑定与启动 ---------------- */
 
 function bindEvents() {
@@ -1114,6 +1191,7 @@ function bindEvents() {
     const img = e.target && e.target.closest ? e.target.closest('img') : null;
     if (img) openLightbox(img);
   });
+  bindSidebarTips();
   document.querySelector('.sidebar-nav').addEventListener('click', (e) => {
     const a = e.target && e.target.closest ? e.target.closest('a') : null;
     if (a) closeDrawer();
