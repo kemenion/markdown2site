@@ -1096,7 +1096,7 @@ function updateSidebarActive() {
    左栏宽度固定（320px），长标题会被省略号截断。气泡挂在 body 上并 fixed 定位：
    #sidebar 有 overflow-y:auto（横向会跟着裁），气泡塞在条目里会被裁掉、还会被
    手机端抽屉的 transform 破坏定位。只有真的被截断时才弹（短标题不打扰），
-   触屏没有悬停，直接不介入。 */
+   触屏没有悬停，直接不介入。默认弹在鼠标（条目）上方，不挡条目本身。 */
 
 let tipNode = null;
 let tipAnchor = null;
@@ -1116,7 +1116,8 @@ function isClipped(node) {
   return node.scrollWidth - node.clientWidth > 1;
 }
 
-function showTip(anchor) {
+/* pointer 是鼠标位置（键盘聚焦时没有，退化成按条目定位） */
+function showTip(anchor, pointer) {
   const tip = tipElement();
   tip.textContent = (anchor.textContent || '').trim();
   if (!tip.textContent) { hideTip(); return; }
@@ -1124,10 +1125,11 @@ function showTip(anchor) {
   const r = anchor.getBoundingClientRect();
   const t = tip.getBoundingClientRect();
   const gap = 6;
-  let top = r.bottom + gap;                 // 默认贴在条目下方
-  if (top + t.height > window.innerHeight - 8) {
-    top = Math.max(8, r.top - gap - t.height);   // 下方放不下就翻到上方
-  }
+  /* 指针若停在条目下缘，取 min 后仍贴在条目前——气泡永远不压住正在看的条目 */
+  const base = pointer ? Math.min(pointer.y, r.top) : r.top;
+  let top = base - gap - t.height;                                  // 默认：鼠标（条目）上方
+  if (top < 8) top = Math.max(r.bottom, pointer ? pointer.y : r.bottom) + gap;   // 上方放不下就翻到下方
+  top = Math.max(8, Math.min(top, window.innerHeight - t.height - 8));
   const left = Math.max(8, Math.min(r.left, window.innerWidth - t.width - 8));
   tip.style.top = top + 'px';
   tip.style.left = left + 'px';
@@ -1154,7 +1156,7 @@ function bindSidebarTips() {
     if (!a) { hideTip(); return; }          // 移到空白处 / 分类标题上
     if (a === tipAnchor) return;            // 同一个条目，不必重算
     if (!isClipped(a)) { hideTip(); return; }   // 没被截断就不打扰
-    showTip(a);
+    showTip(a, { x: e.clientX, y: e.clientY });  // 记住鼠标位置，气泡弹在它上方
   });
   nav.addEventListener('mouseleave', hideTip);
   nav.addEventListener('click', hideTip);                 // 选中文档后立刻收起

@@ -25,6 +25,10 @@
   --content-max: 1200px;
   --radius: 4px;
   --shadow: 0 1px 6px rgba(0, 0, 0, .1);
+  /* 长标题气泡：浅色气泡（浅底深字），深浅主题下都不做反转 */
+  --tip-bg: #f8f8f8;
+  --tip-fg: #34495e;
+  --tip-border: #e3e7ea;
   --tok-comment: #8a8f98;
   --tok-string: #c76b29;
   --tok-number: #a5673f;
@@ -49,6 +53,10 @@ html[data-theme="dark"] {
   --bg-topbar: #1a1e23;
   --link: #4ecf95;
   --shadow: 0 1px 8px rgba(0, 0, 0, .5);
+  /* 气泡同样保持浅色：深色底上浅底深字才读得清 */
+  --tip-bg: #e9eef3;
+  --tip-fg: #1b2026;
+  --tip-border: #cdd5dd;
   --tok-comment: #7d8799;
   --tok-string: #e6a15c;
   --tok-number: #d9a276;
@@ -155,12 +163,12 @@ kbd {
 .sidebar-nav .doc > a::before { content: "📄"; margin-right: 6px; font-size: 12px; opacity: .75; }
 .sidebar-nav .ext > a::after { content: " ↗"; color: var(--text-muted); font-size: 12px; }
 .sidebar-empty { color: var(--text-muted); font-size: 13px; padding: 8px 0; }
-/* 长标题提示：fixed 挂 body（#sidebar 的 overflow 会裁掉内嵌气泡），配色跟主题反转 */
+/* 长标题提示：fixed 挂 body（#sidebar 的 overflow 会裁掉内嵌气泡）；浅色气泡，浅深主题都保持浅底深字 */
 #sidebar-tip {
   position: fixed; z-index: 35;                 /* 顶栏 30 之上、遮罩 40 之下 */
   max-width: min(420px, 90vw);
   padding: 6px 10px; border-radius: var(--radius);
-  background: var(--text-strong); color: var(--bg);
+  background: var(--tip-bg); color: var(--tip-fg); border: 1px solid var(--tip-border);
   font-size: 13px; line-height: 1.5; word-break: break-word; white-space: normal;
   box-shadow: var(--shadow); pointer-events: none;   /* 气泡别抢鼠标 */
 }
