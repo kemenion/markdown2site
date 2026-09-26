@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文档</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2016%2016'%3E%3Ctext%20y%3D'13'%20font-size%3D'13'%3E%F0%9F%93%96%3C%2Ftext%3E%3C%2Fsvg%3E">
+<link rel="stylesheet" href="app/style.css">
+</head>
+<body>
+
+<header id="topbar">
+  <button id="menu-btn" class="icon-btn" type="button" aria-label="切换目录">☰</button>
+  <a id="site-name" class="site-name" href="#/"></a>
+  <div class="topbar-right">
+    <button id="toc-toggle" class="pill-btn" type="button" aria-label="本页大纲">大纲</button>
+    <button id="theme-btn" class="icon-btn" type="button" aria-label="切换主题">🌙</button>
+  </div>
+</header>
+
+<div id="layout">
+  <nav id="sidebar" aria-label="文档目录"><div class="sidebar-nav"></div></nav>
+  <main id="main"><article class="markdown-section" id="content"></article></main>
+  <aside id="toc" aria-label="本页大纲"></aside>
+</div>
+
+<div id="overlay" hidden></div>
+<div id="lightbox" hidden>
+  <img alt="">
+  <button type="button" class="lightbox-close" aria-label="关闭">×</button>
+</div>
+
+<script>
+/* ============================================================
+   站点配置：改这里就够了（说明见 README.md）
+   ============================================================ */
+window.MD_SITE = {
+  name: '阅读收集',        // 顶栏标题；留空则取 _sidebar.md 中第一个文档的标题
+  home: 'README.md',       // 首页文件（#/ 路由指向它）
+  root: 'docs',            // 内容根目录：正文/图片/_sidebar.md 都在它下面；'' = 与 index.html 同级
+  sidebar: '_sidebar.md',  // 目录清单文件（docsify 语法，可直接复用）
+  toc: [2, 3],             // 右栏大纲包含的标题级别，[2, 3] = h2 + h3；左栏只列文件，不挂大纲
+  sidebarExpanded: 'all',  // 左栏分类初始展开：'all' 全展开 | 'none' 全收起 | ['指南', '指南/写内容'] 只展开点名的
+  cacheVersion: 'v1',      // 破缓存版本号，内容更新后改一下即可（自动拼接，无需手改 HTML）
+  theme: 'auto'            // auto | light | dark
+};
+</script>
+<script type="module" src="app/main.js"></script>
+</body>
+</html>
