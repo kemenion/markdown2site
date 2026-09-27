@@ -22,11 +22,16 @@
      嵌套时内层冒号数别超过外层（同数也可以）；内容照常解析 Markdown。
      kind 为上面五种之一，认不出的名字归为 kind:'plain'（中性样式 + 一条 warn）。
 
+    控制台提醒（root.warnings，渲染前由 main.js 逐条 console.warn）：
+      未闭合的代码围栏 / 容器；认不出的容器类型；未定义的脚注引用；
+      链接目标含空格或括号（这类链接会静默退化成普通文本）。
+
    其它少量拓展（都不是标准 Markdown，写法见 docs/指南/写内容/支持的语法.md）：
      代码块行高亮 ```js{1,4-6}、标题自定义锚点 ## 标题 {#id}、文件开头的 YAML front matter（整块忽略）
 
    有意不支持（KISS，见 README「已知限制」）：
-     setext 标题、引用式链接 [a][b]、Obsidian 双链 [[a]]、HTML 块内部的 Markdown
+     setext 标题、引用式链接 [a][b]、Obsidian 双链 [[a]]、HTML 块内部的 Markdown、
+     行尾单个反斜杠的硬换行（反斜杠按字面保留，要换行请用行尾两个空格）
    ============================================================ */
 
 const BLOCK_TAGS = new Set([
@@ -66,6 +71,9 @@ export function parse(src, options = {}) {
     const node = makeFootnotes(state);
     if (node.items.length) children.push(node);
   }
+  for (const id of state.refOrder) {
+    if (!state.defs.has(id)) state.warnings.push('[^' + id + '] 没有对应的脚注定义，已按原样显示');
+  }
   const root = { type: 'root', children };
   if (state.warnings.length) root.warnings = state.warnings;
   return root;
@@ -102,7 +110,7 @@ function parseBlocks(lines, state, opts) {
     }
 
     const fence = RE_FENCE.exec(line);
-    if (fence) { const r = readFence(lines, i, fence); out.push(r.node); i = r.next; continue; }
+    if (fence) { const r = readFence(lines, i, fence, state); out.push(r.node); i = r.next; continue; }
 
     const h = RE_HEADING.exec(line);
     if (h) { out.push(makeHeading(h[2] || '', h[1].length, state)); i++; continue; }
@@ -138,7 +146,9 @@ function readParagraph(lines, i, state) {
     buf.push(line);
     i++;
   }
-  return { node: { type: 'paragraph', inline: parseInline(buf.join('\n'), state) }, next: i };
+  const raw = buf.join('\n');
+  warnLinkTargets(raw, state);
+  return { node: { type: 'paragraph', inline: parseInline(raw, state) }, next: i };
 }
 
 function makeHeading(raw, level, state) {
@@ -159,7 +169,7 @@ function unique(id, usedIds) {
   return n ? id + '-' + n : id;
 }
 
-function readFence(lines, i, m) {
+function readFence(lines, i, m, state) {
   const marker = m[1][0];
   const len = m[1].length;
   let info = (m[2] || '').trim();
@@ -168,6 +178,7 @@ function readFence(lines, i, m) {
   let j = i + 1;
   while (j < lines.length && !closeRe.test(lines[j])) { buf.push(lines[j]); j++; }
   if (j < lines.length) j++;
+  else if (state) state.warnings.push('代码块缺少收尾的 ' + marker.repeat(3) + '，已按到文末处理');
   let hl = [];
   const marks = RE_LINE_MARKS.exec(info);          // ```js{1,4-6}：行高亮，别混进语言名
   if (marks) {
@@ -220,7 +231,7 @@ function readContainer(lines, i, open, state, opts) {
     const line = lines[j];
     const fence = RE_FENCE.exec(line);
     if (fence) {                                 // 代码块整块抄进来：里面的 ::: 不算容器边界
-      const r = readFence(lines, j, fence);
+      const r = readFence(lines, j, fence, state);
       for (let k = j; k < r.next; k++) buf.push(lines[k]);
       j = r.next;
       continue;
@@ -418,17 +429,30 @@ function hasPipe(line) { return /(^|[^\\])\|/.test(line); }
 function splitRow(line) {
   let s = line.trim();
   if (s.startsWith('|')) s = s.slice(1);
-  if (s.endsWith('|') && !s.endsWith('\\|')) s = s.slice(0, -1);
+  if (s.endsWith('|') && !endsWithEscapedPipe(s)) s = s.slice(0, -1);
   const cells = [];
   let cur = '';
+  let back = 0;                                   // 连续反斜杠个数：奇数个才转义后面的 |
   for (let k = 0; k < s.length; k++) {
     const ch = s[k];
-    if (ch === '\\' && s[k + 1] === '|') { cur += '\\|'; k++; continue; }
-    if (ch === '|') { cells.push(cur); cur = ''; continue; }
+    if (ch === '|') {
+      if (back % 2 === 1) cur = cur.slice(0, -1) + '|';    // \| -> 字面竖线（反斜杠不留）
+      else { cells.push(cur); cur = ''; }
+      back = 0;
+      continue;
+    }
+    back = ch === '\\' ? back + 1 : 0;
     cur += ch;
   }
   cells.push(cur);
   return cells.map(c => c.trim());
+}
+
+/* 行尾的 | 前面若挂着奇数个反斜杠，那它是单元格里的字面竖线，不是收尾的分隔符 */
+function endsWithEscapedPipe(s) {
+  let n = 0;
+  for (let k = s.length - 2; k >= 0 && s[k] === '\\'; k--) n++;
+  return n % 2 === 1;
 }
 
 function isDelimRow(line) {
@@ -509,6 +533,7 @@ export function plainText(nodes) {
 
 const INLINE_RULES = [
   { name: 'escape', re: /\\([!-\/:-@\[-`{-~])/y },
+  { name: 'entity', re: /&(#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[a-zA-Z][a-zA-Z0-9]{1,31});/y },
   { name: 'code', re: /(`+)([\s\S]*?[^`])\1(?!`)/y },
   { name: 'image', re: /!\[([^\]]*)\]\(\s*(<[^<>\s]*>|[^\s()]*?)(?:\s+(["'])([\s\S]*?)\3)?\s*\)/y },
   { name: 'link', re: /\[([^\]]*)\]\(\s*(<[^<>\s]*>|[^\s()]*?)(?:\s+(["'])([\s\S]*?)\3)?\s*\)/y },
@@ -516,12 +541,15 @@ const INLINE_RULES = [
   { name: 'html', re: /<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s+[^<>]*?)?\/?>/y },
   { name: 'footnote', re: /\[\^([^\]\s]+)\]/y },
   { name: 'strongemStar', re: /\*\*\*(?=\S)([\s\S]*?\S)\*\*\*/y },
-  { name: 'strongemUnderscore', re: /(?<![\w])___(?=\S)([\s\S]*?\S)___(?![\w])/y },
+  /* 下划线系列只在词边界生效（\w 是 ASCII-only，中文等非 ASCII 字母不算词字符，
+     所以这里用 [\p{L}\p{N}_] + u 标志，否则「中文_强调_中文」「变量__粗__体」会被误判成强调）。
+     星号没有这个限制：* 允许词内强调，与 CommonMark 的 5*6*78 一致。 */
+  { name: 'strongemUnderscore', re: /(?<![\p{L}\p{N}_])___(?=\S)([\s\S]*?\S)___(?![\p{L}\p{N}_])/yu },
   { name: 'strongStar', re: /\*\*(?=\S)([\s\S]*?\S)\*\*/y },
-  { name: 'strongUnderscore', re: /(?<![\w])__(?=\S)([\s\S]*?\S)__(?![\w])/y },
+  { name: 'strongUnderscore', re: /(?<![\p{L}\p{N}_])__(?=\S)([\s\S]*?\S)__(?![\p{L}\p{N}_])/yu },
   { name: 'del', re: /~~(?=\S)([\s\S]*?\S)~~/y },
   { name: 'emStar', re: /\*(?=\S)([\s\S]*?\S)\*/y },
-  { name: 'emUnderscore', re: /(?<![\w])_(?=\S)([\s\S]*?\S)_(?![\w])/y },
+  { name: 'emUnderscore', re: /(?<![\p{L}\p{N}_])_(?=\S)([\s\S]*?\S)_(?![\p{L}\p{N}_])/yu },
   { name: 'barelink', re: /(?:https?:\/\/|www\.)[^\s<>()"'，。；：！？、）】」]+/y },
   { name: 'hardbreak', re: / {2,}\n/y },
   { name: 'newline', re: /\n/y }
@@ -556,6 +584,11 @@ function parseInline(text, state) {
       case 'escape':
         buf += m[1];
         break;
+      case 'entity': {
+        const decoded = decodeEntity(m[1]);
+        buf += decoded === null ? m[0] : decoded;      // 认不出的实体原样保留
+        break;
+      }
       case 'code':
         flush();
         nodes.push({ type: 'code', value: stripCodePadding(m[2]) });
@@ -648,3 +681,61 @@ function stripCodePadding(s) {
 function stripAngle(s) {
   return s && s.startsWith('<') && s.endsWith('>') ? s.slice(1, -1) : s;
 }
+
+/* ---------------- HTML 实体 ----------------
+
+   正文里的 &amp; &#x4e2d; 这类实体在解析阶段就还原成字符（渲染层是 textContent，
+   <script> 之类还原出来也只是文本，不会被执行）。只认下面这批常用命名实体，
+   认不出的（&foo;）原样保留 —— 和浏览器对未知实体的处理一致。
+   行内代码与代码块里不还原（code 规则整块吃掉，不会逐字符扫描）。 */
+
+const NAMED_ENTITIES = {
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0',
+  copy: '©', reg: '®', trade: '™', deg: '°', plusmn: '±', times: '×', divide: '÷',
+  mdash: '—', ndash: '–', hellip: '…', middot: '·', bull: '•', sect: '§', para: '¶',
+  laquo: '«', raquo: '»', ldquo: '“', rdquo: '”', lsquo: '‘', rsquo: '’',
+  larr: '←', rarr: '→', uarr: '↑', darr: '↓', harr: '↔', ne: '≠', le: '≤', ge: '≥'
+};
+
+function decodeEntity(name) {
+  if (name[0] === '#') {
+    const hex = name[1] === 'x' || name[1] === 'X';
+    const code = parseInt(name.slice(hex ? 2 : 1), hex ? 16 : 10);
+    if (!Number.isFinite(code) || code < 1 || code > 0x10ffff) return null;
+    if (code >= 0xd800 && code <= 0xdfff) return null;      // 单个代理码位没有意义
+    return String.fromCodePoint(code);
+  }
+  const key = name.toLowerCase();
+  return Object.prototype.hasOwnProperty.call(NAMED_ENTITIES, key) ? NAMED_ENTITIES[key] : null;
+}
+
+/* ---------------- 链接目标的静默失败提醒 ----------------
+
+   [文字](目标) 里目标含空格、含括号，或 title 没加引号时，行内规则整条不匹配：
+   链接会安静地变成普通文本，页面不报错，写字的人也不容易发现。这里补一条提醒。
+   代码段（`…`）里的内容先剔掉，免得文档里教语法的示例自己被警告。 */
+
+const RE_LINK_SHAPE = /!?\[[^\]\n]*\]\(\s*([^)\n]*?)\s*\)/g;
+
+function warnLinkTargets(src, state) {
+  if (src.indexOf('](') < 0) return;
+  const text = src.replace(/`[^`\n]*`/g, ' ').replace(/``[\s\S]*?``/g, ' ');
+  RE_LINK_SHAPE.lastIndex = 0;
+  let m;
+  while ((m = RE_LINK_SHAPE.exec(text))) {
+    const target = m[1];
+    if (!target || target.indexOf('<') >= 0) continue;              // <…> 包裹的写法本来就合法
+    if (target.indexOf('(') >= 0) {
+      state.warnings.push('链接目标「' + target + '」里有括号，只解析到第一个右括号就断了；'
+        + '要写成 [文字](<' + target + '>)');
+      continue;
+    }
+    const sp = target.search(/[ \t]/);
+    if (sp < 0) continue;
+    if (/^["']/.test(target.slice(sp).trim())) continue;            // 引号括起来的 title，合法
+    state.warnings.push('链接目标「' + target + '」含空格，这条链接不会生效：'
+      + '目标里真有空格就写成 [文字](<' + target.replace(/[ \t][\s\S]*$/, '') + '>)，'
+      + 'title 必须用引号括起来');
+  }
+}
+
