@@ -141,7 +141,9 @@ kbd {
   height: calc(100vh - var(--topbar-h));
   height: calc(100dvh - var(--topbar-h));
   overflow-y: auto; overscroll-behavior: contain;
-  background: var(--bg-toc); border-left: 1px solid var(--border);
+  /* 底色跟正文一致（浅色都是 #fff、深色都走 --bg），只靠这 1px 边框分区；
+     --bg-toc 是条目 hover、表头、长标题展开横条共用的浅灰，别动它 */
+  background: var(--bg); border-left: 1px solid var(--border);
   padding: 20px 16px 40px; font-size: 14px;
 }
 
