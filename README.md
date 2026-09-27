@@ -13,5 +13,6 @@ python3 -m http.server 8080     # 在仓库根目录执行，然后打开 http:/
 
 使用说明就在站点里（`docs/` 既是内容根、也是它自己的说明书）：从 [`docs/README.md`](docs/README.md)
 开始读——配置、左栏清单、Markdown 语法、路由规则、界面与移动端、仓库结构都在里面。
-测试相关的一切（E2E 套件、失败模式清单、夹具）在 [`test/`](test/README.md)，与站点运行无关，可整个删掉。
+测试与验证脚本不在仓库里：`test/` 已被 `.gitignore` 忽略、历史上从未入库。解析器（`app/markdown.js`）
+是纯函数，开发期用 Node 直接断言 AST、再用 Playwright 打开真实页面看渲染就够，见 [`docs/参考/项目结构.md`](docs/参考/项目结构.md)。
 
