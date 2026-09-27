@@ -25,10 +25,6 @@
   --content-max: 1200px;
   --radius: 4px;
   --shadow: 0 1px 6px rgba(0, 0, 0, .1);
-  /* 长标题气泡：浅色气泡（浅底深字），深浅主题下都不做反转 */
-  --tip-bg: #f8f8f8;
-  --tip-fg: #34495e;
-  --tip-border: #e3e7ea;
   --tok-comment: #8a8f98;
   --tok-string: #c76b29;
   --tok-number: #a5673f;
@@ -60,10 +56,6 @@ html[data-theme="dark"] {
   --bg-topbar: #1a1e23;
   --link: #4ecf95;
   --shadow: 0 1px 8px rgba(0, 0, 0, .5);
-  /* 气泡同样保持浅色：深色底上浅底深字才读得清 */
-  --tip-bg: #e9eef3;
-  --tip-fg: #1b2026;
-  --tip-border: #cdd5dd;
   --tok-comment: #7d8799;
   --tok-string: #e6a15c;
   --tok-number: #d9a276;
@@ -177,15 +169,26 @@ kbd {
 .sidebar-nav .doc > a::before { content: "📄"; margin-right: 6px; font-size: 12px; opacity: .75; }
 .sidebar-nav .ext > a::after { content: " ↗"; color: var(--text-muted); font-size: 12px; }
 .sidebar-empty { color: var(--text-muted); font-size: 13px; padding: 8px 0; }
-/* 长标题提示：fixed 挂 body（#sidebar 的 overflow 会裁掉内嵌气泡）；浅色气泡，浅深主题都保持浅底深字 */
-#sidebar-tip {
-  position: fixed; z-index: 35;                 /* 顶栏 30 之上、遮罩 40 之下 */
-  max-width: min(420px, 90vw);
-  padding: 6px 10px; border-radius: var(--radius);
-  background: var(--tip-bg); color: var(--tip-fg); border: 1px solid var(--tip-border);
-  font-size: 13px; line-height: 1.5; word-break: break-word; white-space: normal;
-  box-shadow: var(--shadow); pointer-events: none;   /* 气泡别抢鼠标 */
+/* 长标题的悬停展开（取代原来的悬停气泡）——
+   左栏是纵向滚动区（overflow-y:auto），横向溢出会被它裁掉：想用 overflow-x:clip 也不行，
+   与 overflow-y:auto 搭配时 clip 会按 hidden 计算（规范如此），溢出照样裁在左栏边。
+   所以"整行伸出左栏"只能画在左栏外面：悬停（或键盘 Tab 聚焦）时由 JS 把条目原位复刻成下面这条
+   fixed 横条 —— 位置、字号、底色都跟条目一致，底色不透明，条目自己被截断的那行正好被它盖住。
+   没有气泡的边框/阴影/圆角，看起来就是那一行往右伸了出去。手机没有悬停，这一层不会出现。 */
+#sidebar-expand {
+  position: fixed; z-index: 46;              /* 左栏 45 之上：要盖住条目里被截断的那行 */
+  padding: 0 8px; font-size: 15px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;   /* 比窗口还长时在窗口边收住 */
+  color: var(--text); background: var(--bg-toc);
+  pointer-events: none;                      /* 别抢鼠标：下面那条目还要继续接事件 */
 }
+#sidebar-expand.active {                     /* 当前条目底色是半透明绿，会透出正文：先铺一层实底 */
+  color: var(--accent); font-weight: 600;
+  background-color: var(--bg-sidebar);
+  background-image: linear-gradient(rgba(66, 185, 131, .1), rgba(66, 185, 131, .1));
+}
+#sidebar-expand.doc::before { content: "📄"; margin-right: 6px; font-size: 12px; opacity: .75; }
+#sidebar-expand.ext::after { content: " ↗"; color: var(--text-muted); font-size: 12px; }
 
 /* ---------------- Markdown 正文（数值对齐 vue 主题） ---------------- */
 .markdown-section > *:first-child { margin-top: 0; }
